@@ -11,16 +11,19 @@ let providers = [];             // All available providers
 let currentSessionId = null;
 let currentAbortController = null;
 let isStreaming = false;
+let streamingTextBuffer = '';   // Accumulator for streaming markdown re-renders
 
 // --- DOM refs ---
 const messagesEl = document.getElementById('messages');
 const inputEl = document.getElementById('message-input');
 const sendBtn = document.getElementById('send-btn');
+const stopBtn = document.getElementById('stop-btn');
 const thinkingEl = document.getElementById('thinking');
 const thinkingText = document.getElementById('thinking-text');
 const errorBanner = document.getElementById('error-banner');
 const errorText = document.getElementById('error-text');
 const sessionList = document.getElementById('session-list');
+const sessionCount = document.getElementById('session-count');
 const authBanner = document.getElementById('auth-banner');
 const authBannerText = document.getElementById('auth-banner-text');
 const modelInfo = document.getElementById('model-info');
@@ -57,6 +60,23 @@ inputEl.addEventListener('keydown', (e) => {
 });
 
 sendBtn.addEventListener('click', sendMessage);
+
+// --- Stop button ---
+stopBtn.addEventListener('click', stopGeneration);
+
+function stopGeneration() {
+  if (currentAbortController) {
+    currentAbortController.abort();
+  }
+  // Also tell the server to abort
+  if (currentProvider) {
+    fetch('/api/abort', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: currentProvider.id }),
+    }).catch(() => {});
+  }
+}
 
 // --- New chat ---
 newChatBtn.addEventListener('click', () => {
@@ -195,7 +215,10 @@ async function sendMessage() {
 
   // Prepare streaming
   isStreaming = true;
+  streamingTextBuffer = '';
   thinkingEl.classList.remove('hidden');
+  sendBtn.classList.add('hidden');
+  stopBtn.classList.remove('hidden');
   scrollToBottom();
 
   currentAbortController = new AbortController();
@@ -258,14 +281,23 @@ async function sendMessage() {
       }
     }
   } catch (err) {
-    if (err.name === 'AbortError') return;
-    showError(err.message || 'Request failed');
-    assistantDiv.remove();
+    if (err.name === 'AbortError') {
+      // User stopped — render what we have
+      if (streamingTextBuffer) {
+        contentEl.innerHTML = renderMarkdown(streamingTextBuffer);
+      }
+    } else {
+      showError(err.message || 'Request failed');
+      assistantDiv.remove();
+    }
   } finally {
     isStreaming = false;
+    streamingTextBuffer = '';
     thinkingEl.classList.add('hidden');
     contentEl.classList.remove('streaming');
     sendBtn.disabled = !inputEl.value.trim();
+    sendBtn.classList.remove('hidden');
+    stopBtn.classList.add('hidden');
     currentAbortController = null;
 
     // Add timestamp
@@ -288,32 +320,40 @@ function handleEvent(ev, contentEl) {
       break;
 
     case 'text_delta':
-      contentEl.textContent += ev.text;
+      streamingTextBuffer += ev.text;
+      contentEl.innerHTML = renderMarkdown(streamingTextBuffer);
       scrollToBottom();
       break;
 
     case 'message':
       if (ev.content) {
-        contentEl.textContent = ev.content;
+        streamingTextBuffer = ev.content;
+        contentEl.innerHTML = renderMarkdown(ev.content);
         scrollToBottom();
       }
       break;
 
-    case 'tool_call':
-      // Render tool call indicator
+    case 'tool_call': {
       const toolDiv = document.createElement('div');
       toolDiv.className = 'tool-call';
-      toolDiv.innerHTML = `<strong>${escapeHtml(ev.name)}</strong> ${escapeHtml(formatToolInput(ev.input))}`;
+      const inputStr = formatToolInput(ev.input);
+      toolDiv.innerHTML = `<strong>${escapeHtml(ev.name)}</strong>${inputStr ? ' ' + escapeHtml(inputStr) : ''}`;
       contentEl.appendChild(toolDiv);
       scrollToBottom();
       break;
+    }
 
-    case 'tool_result':
-      // Could expand tool results in UI
+    case 'tool_result': {
+      const resultDiv = document.createElement('div');
+      resultDiv.className = 'tool-result';
+      const output = typeof ev.output === 'string' ? ev.output : JSON.stringify(ev.output || '');
+      resultDiv.innerHTML = `<span class="tool-result-label">Result:</span> <code>${escapeHtml(output.slice(0, 500))}${output.length > 500 ? '...' : ''}</code>`;
+      contentEl.appendChild(resultDiv);
+      scrollToBottom();
       break;
+    }
 
     case 'thinking':
-      // Show thinking indicator
       thinkingText.textContent = ev.text || `${currentProvider?.name || 'Agent'} is thinking...`;
       break;
 
@@ -327,16 +367,51 @@ function handleEvent(ev, contentEl) {
       showError(ev.message || 'Unknown error');
       break;
 
-    case 'done':
+    case 'done': {
       const ts = document.createElement('div');
       ts.className = 'timestamp cost';
       const parts = [];
       if (ev.cost) parts.push(`$${Number(ev.cost).toFixed(4)}`);
       if (ev.durationMs) parts.push(`${(ev.durationMs / 1000).toFixed(1)}s`);
+      if (ev.usage) {
+        if (ev.usage.input_tokens) parts.push(`${ev.usage.input_tokens.toLocaleString()} in`);
+        if (ev.usage.output_tokens) parts.push(`${ev.usage.output_tokens.toLocaleString()} out`);
+      }
       if (parts.length) ts.textContent = parts.join(' \u00b7 ');
       contentEl.parentElement.appendChild(ts);
       break;
+    }
   }
+}
+
+// --- Markdown renderer (minimal) ---
+function renderMarkdown(text) {
+  if (!text) return '';
+
+  // Escape HTML first
+  let html = escapeHtml(text);
+
+  // Fenced code blocks: ```lang\n...\n```
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    return `<pre><code class="lang-${lang || 'text'}">${code.trim()}</code></pre>`;
+  });
+
+  // Inline code: `...`
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Bold: **...**
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // Italic: *...*
+  html = html.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>');
+
+  // Links: [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+
+  return html;
 }
 
 // --- Add a user message ---
@@ -351,7 +426,7 @@ function addMessage(role, text) {
       <div class="avatar" style="background: ${avatarBg}">${avatar}</div>
       <span>${escapeHtml(name)}</span>
     </div>
-    <div class="message-content">${escapeHtml(text)}</div>
+    <div class="message-content">${role === 'user' ? escapeHtml(text) : renderMarkdown(text)}</div>
     <div class="timestamp">${new Date().toLocaleTimeString()}</div>
   `;
   messagesEl.appendChild(div);
@@ -381,7 +456,7 @@ function loadSession(sessionId) {
               <div class="avatar" style="background: ${currentProvider?.color || 'var(--bg-tertiary)'}">${currentProvider?.icon || 'A'}</div>
               <span>${escapeHtml(currentProvider?.name || 'Agent')}</span>
             </div>
-            <div class="message-content">${escapeHtml(msg.content)}</div>
+            <div class="message-content">${renderMarkdown(msg.content || '')}</div>
           `;
           messagesEl.appendChild(div);
         }
@@ -396,6 +471,7 @@ function loadSession(sessionId) {
 async function loadSessions() {
   if (!currentProvider) {
     sessionList.innerHTML = '<div class="loading-sessions" style="padding:16px;color:var(--text-muted);font-size:13px;">Select a provider</div>';
+    sessionCount.textContent = '';
     return;
   }
 
@@ -403,21 +479,56 @@ async function loadSessions() {
     const list = await fetch(`/api/sessions?provider=${currentProvider.id}`).then(r => r.json());
     if (!list.length) {
       sessionList.innerHTML = '<div class="loading-sessions" style="padding:16px;color:var(--text-muted);font-size:13px;">No sessions yet</div>';
+      sessionCount.textContent = '';
       return;
     }
+
+    sessionCount.textContent = `${list.length} session${list.length !== 1 ? 's' : ''}`;
+
     sessionList.innerHTML = list
-      .map(s => `
+      .map(s => {
+        const timeAgo = formatTimeAgo(s.updated || s.created);
+        const meta = [timeAgo];
+        if (s.messageCount) meta.push(`${s.messageCount} msgs`);
+        return `
         <div class="session-item${s.id === currentSessionId ? ' active' : ''}"
              data-id="${s.id}">
-          ${escapeHtml(s.title || 'Untitled')}
-        </div>`)
+          <div class="session-item-content">
+            <div class="session-title">${escapeHtml(s.title || 'Untitled')}</div>
+            <div class="session-meta">${meta.join(' · ')}</div>
+          </div>
+          <button class="session-delete" data-id="${s.id}" title="Delete session">&times;</button>
+        </div>`;
+      })
       .join('');
 
     sessionList.querySelectorAll('.session-item').forEach(el => {
-      el.addEventListener('click', () => loadSession(el.dataset.id));
+      el.addEventListener('click', (e) => {
+        // Don't load session if clicking delete
+        if (e.target.closest('.session-delete')) return;
+        loadSession(el.dataset.id);
+      });
+    });
+
+    sessionList.querySelectorAll('.session-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        try {
+          await fetch(`/api/sessions/${id}?provider=${currentProvider.id}`, { method: 'DELETE' });
+          if (id === currentSessionId) {
+            currentSessionId = null;
+            showWelcome();
+          }
+          loadSessions();
+        } catch {
+          showError('Failed to delete session');
+        }
+      });
     });
   } catch {
     sessionList.innerHTML = '<div class="loading-sessions">Failed to load</div>';
+    sessionCount.textContent = '';
   }
 }
 
@@ -515,6 +626,20 @@ function formatToolInput(input) {
   } catch {
     return '';
   }
+}
+
+function formatTimeAgo(timestamp) {
+  if (!timestamp) return '';
+  const diff = Date.now() - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(timestamp).toLocaleDateString();
 }
 
 function getCurrentCwd() {

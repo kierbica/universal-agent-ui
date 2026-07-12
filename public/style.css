@@ -247,6 +247,9 @@ html, body {
 }
 
 .session-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 12px;
   margin: 2px 0;
   border-radius: var(--radius-sm);
@@ -254,9 +257,6 @@ html, body {
   font-size: 13px;
   color: var(--text-secondary);
   transition: background 0.15s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .session-item:hover {
   background: var(--bg-hover);
@@ -265,6 +265,46 @@ html, body {
 .session-item.active {
   background: var(--bg-tertiary);
   color: var(--text-primary);
+}
+
+.session-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: inherit;
+}
+
+.session-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.session-delete {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  line-height: 1;
+}
+.session-item:hover .session-delete {
+  opacity: 1;
+}
+.session-delete:hover {
+  color: var(--danger);
+  background: rgba(244, 67, 54, 0.1);
 }
 
 .loading-sessions {
@@ -287,6 +327,11 @@ html, body {
 .model-info {
   flex: 1;
   margin-bottom: 0;
+}
+#session-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 .settings-btn {
   background: none;
@@ -453,6 +498,48 @@ html, body {
   color: var(--text-secondary);
 }
 
+.message-content .tool-result {
+  margin: 4px 0 8px;
+  padding: 6px 12px;
+  background: var(--bg-primary);
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tool-result-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.tool-result code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: none;
+  padding: 0;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.message-content a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.message-content a:hover {
+  text-decoration: underline;
+}
+
+.message-content strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.message-content em {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
 .message .timestamp {
   padding-left: 34px;
   margin-top: 4px;
@@ -581,6 +668,27 @@ html, body {
 #send-btn:disabled {
   opacity: 0.3;
   cursor: default;
+}
+
+#stop-btn {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--danger);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+#stop-btn:hover {
+  background: #d32f2f;
+}
+#stop-btn.hidden {
+  display: none;
 }
 
 .input-footer {
