@@ -1,6 +1,6 @@
 # Universal Agent UI
 
-A provider-agnostic web frontend for AI coding agents. Connect to Claude Code, OpenCode, Codex, Gemini CLI, Aider, and any future agent through a single, unified interface.
+A web frontend for AI coding agents — similar to OpenCode's Web UI, but provider-agnostic. Connect to Claude Code, OpenCode/Crush, or any other coding agent through a single interface with session history, streaming responses, and provider switching.
 
 ## Quick Start
 
@@ -11,55 +11,34 @@ npm install
 npm start
 ```
 
-Open **http://localhost:3300**, pick a provider from the sidebar dropdown, and start chatting.
+Open **http://localhost:3300** and start chatting.
 
-## What It Does
+## Features
 
-Universal Agent UI decouples the chat interface from any single coding agent. Instead of building a separate UI for each provider, you get one interface that speaks a standardized protocol. Any agent that implements the adapter interface works out of the box.
+- **Session history** — browse, resume, and delete past conversations per provider
+- **Streaming responses** — real-time token-by-token output with cost and duration tracking
+- **Provider switching** — dropdown to switch between Claude Code, OpenCode, and others on the fly
+- **Dynamic theming** — UI colors, icons, and labels adapt to the selected provider
+- **Tool call visibility** — see which tools the agent is invoking (bash, file edits, etc.)
+- **Auth status** — check if the selected provider is authenticated
+- **Settings modal** — enable/disable providers without touching config files
+- **Thinking indicator** — visual feedback while the agent processes
+- **Cost tracking** — per-response cost and duration display
+- **New chat** — one-click session reset
 
-**Supported providers today:**
+## Built-in Providers
 
-| Provider | Transport | Status |
-|----------|-----------|--------|
-| Claude Code | CLI (`claude --output-format stream-json`) | Built-in |
-| OpenCode / Crush | HTTP API (`crush serve`) | Built-in |
-| Codex | CLI | Adapter-ready |
-| Gemini CLI | CLI | Adapter-ready |
-| Aider | CLI | Adapter-ready |
-| Continue | HTTP API | Adapter-ready |
-| OpenHands | HTTP API | Adapter-ready |
-
-"Adapter-ready" means the interface supports it — you just write the adapter.
-
-## Architecture
-
-```
-server.js                     Express backend, provider-agnostic routing
-adapters/
-  base.js                     BaseAdapter interface + event helpers
-  registry.js                 Auto-discovery, lifecycle management
-  claude-code.js              Claude Code CLI adapter
-  opencode.js                 OpenCode/Crush HTTP adapter
-config/providers.json         Provider configurations
-public/
-  index.html                  UI shell with provider selector
-  app.js                      Frontend logic, provider switching
-  style.css                   Theme with dynamic accent colors
-```
-
-**Key design decisions:**
-
-- **Adapter pattern** — each provider is a class extending `BaseAdapter`. All provider logic stays in `adapters/`. The server and frontend never import provider-specific code.
-- **Normalized event stream** — every adapter emits the same event types (`text_delta`, `tool_call`, `done`, etc.). The frontend doesn't know or care which provider is behind the stream.
-- **Auto-discovery** — drop a `.js` file in `adapters/` exporting a `BaseAdapter` subclass. The registry picks it up on server start. Zero config changes.
-- **Dynamic theming** — the frontend reads each provider's color and icon, updating CSS variables, labels, and placeholders in real time when you switch.
+| Provider | Transport | How it works |
+|----------|-----------|--------------|
+| **Claude Code** | CLI | Spawns `claude` with `--output-format stream-json` for streaming |
+| **OpenCode / Crush** | HTTP | Connects to `crush serve` via SSE streaming |
 
 ## Adding a New Provider
 
-Create `adapters/my-agent.js`:
+Create a single file `adapters/my-agent.js`:
 
 ```js
-import { BaseAdapter, textDelta, doneEvent, errorEvent } from './base.js';
+import { BaseAdapter, textDelta, doneEvent } from './base.js';
 
 export default class MyAgentAdapter extends BaseAdapter {
   get id()     { return 'my-agent'; }
@@ -77,51 +56,46 @@ export default class MyAgentAdapter extends BaseAdapter {
   }
 
   async *chat(message, options) {
-    // Your provider-specific streaming logic.
-    // Yield normalized events:
-    yield { type: 'session', sessionId: 'abc-123' };
+    // Your streaming logic here
     yield textDelta('Hello! ');
-    yield textDelta('How can I help?');
     yield doneEvent({ durationMs: 1200 });
   }
 
   async listSessions() {
-    return [{ id: 'abc-123', title: 'Previous chat', created: Date.now(), updated: Date.now(), messageCount: 4 }];
+    return [];
   }
 }
 ```
 
-Restart the server. Your provider appears in the dropdown automatically.
+Restart the server — your provider appears in the dropdown automatically.
 
 ## Adapter Interface
 
-Every adapter must implement:
+Every adapter extends `BaseAdapter` and implements:
 
-| Method | Returns | Description |
-|--------|---------|-------------|
-| `get id` | `string` | Unique provider ID |
-| `get name` | `string` | Display name |
-| `get icon` | `string` | Emoji icon |
-| `get color` | `string` | Hex color for theming |
-| `get capabilities` | `Set<string>` | Supported features |
-| `authStatus()` | `AuthStatus` | Authentication state |
-| `chat(message, options)` | `AsyncGenerator<ChatEvent>` | Stream response events |
-| `listSessions()` | `SessionSummary[]` | List saved sessions |
-| `getSession(id)` | `SessionDetail` | Get session with messages |
-| `deleteSession(id)` | `boolean` | Delete a session |
-| `abort()` | `void` | Cancel current generation |
+| Method | Description |
+|--------|-------------|
+| `get id` | Unique provider ID |
+| `get name` | Display name |
+| `get icon` | Emoji icon |
+| `get color` | Hex color for theming |
+| `get capabilities` | Set of supported features |
+| `authStatus()` | Authentication state |
+| `chat(message, options)` | Stream response events |
+| `listSessions()` | List saved sessions |
+| `getSession(id)` | Get session with messages |
+| `deleteSession(id)` | Delete a session |
+| `abort()` | Cancel current generation |
 
 ### Capabilities
 
-Adapters declare which features they support:
-
 | Capability | Description |
 |------------|-------------|
-| `chat` | Send messages and receive streaming responses |
-| `sessions` | Session management (list, get, delete) |
-| `tools` | Tool call visibility (bash, file ops, etc.) |
+| `chat` | Send messages and stream responses |
+| `sessions` | List, get, and delete sessions |
+| `tools` | Tool call visibility |
 | `diffs` | Code diff display |
-| `auth` | Authentication status checking |
+| `auth` | Authentication status |
 | `abort` | Cancel mid-generation |
 | `models` | List available models |
 
@@ -130,35 +104,28 @@ Adapters declare which features they support:
 All adapters emit normalized events:
 
 ```js
-{ type: 'session',    sessionId: '...' }
-{ type: 'text_delta', text: '...' }
-{ type: 'tool_call',  name: 'bash', input: { command: 'ls' } }
+{ type: 'session',     sessionId: '...' }
+{ type: 'text_delta',  text: '...' }
+{ type: 'tool_call',   name: 'bash', input: { command: 'ls' } }
 { type: 'tool_result', name: 'bash', output: 'file1\nfile2' }
-{ type: 'thinking',   text: '...' }
-{ type: 'message',    role: 'assistant', content: '...' }
-{ type: 'system',     model: 'claude-sonnet-4', provider: 'anthropic' }
-{ type: 'done',       cost: 0.0042, durationMs: 3200, usage: {...} }
-{ type: 'error',      message: 'Something went wrong' }
+{ type: 'thinking',    text: '...' }
+{ type: 'message',     role: 'assistant', content: '...' }
+{ type: 'system',      model: 'claude-sonnet-4', provider: 'anthropic' }
+{ type: 'done',        cost: 0.0042, durationMs: 3200, usage: {...} }
+{ type: 'error',       message: 'Something went wrong' }
 ```
 
 ## API
 
-The server exposes provider-agnostic endpoints:
-
 ```
 GET  /api/providers                  List all providers
-GET  /api/providers/:id/status       Auth status for a provider
-GET  /api/providers/:id/config       Get provider config
+GET  /api/providers/:id/status       Auth status
 POST /api/providers/:id/config       Update provider config
-
-GET  /api/chat?message=...&provider=claude-code   SSE stream
-POST /api/chat                      POST variant for large messages
-
-GET  /api/sessions?provider=claude-code   List sessions
-GET  /api/sessions/:id                    Get session
-DELETE /api/sessions/:id                  Delete session
-
-POST /api/abort                     Abort current generation
+POST /api/chat                       SSE stream (provider + message)
+GET  /api/sessions?provider=<id>     List sessions
+GET  /api/sessions/:id               Get session with messages
+DELETE /api/sessions/:id             Delete session
+POST /api/abort                      Abort current generation
 ```
 
 ## Configuration
@@ -170,27 +137,17 @@ Provider configs live in `config/providers.json`:
   "providers": {
     "claude-code": {
       "enabled": true,
-      "config": {
-        "command": "claude",
-        "timeout": 300000
-      }
+      "config": { "command": "claude", "timeout": 300000 }
     },
     "opencode": {
       "enabled": true,
-      "config": {
-        "baseUrl": "http://localhost:3000",
-        "apiKey": null
-      }
+      "config": { "baseUrl": "http://localhost:3000" }
     }
   }
 }
 ```
 
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3300` | Server port |
+Set `PORT` env var to change the default port (3300).
 
 ## Requirements
 
