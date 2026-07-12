@@ -1,0 +1,42 @@
+{
+  "providers": {
+    "claude-code": {
+      "enabled": true,
+      "config": {
+        "command": "claude",
+        "shell": null,
+        "timeout": 300000
+      }
+    },
+    "opencode": {
+      "enabled": true,
+      "config": {
+        "baseUrl": "http://localhost:3000",
+        "apiKey": null
+      }
+    },
+    "codex": {
+      "enabled": false,
+      "config": {
+        "command": "codex",
+        "model": null,
+        "timeout": 300000
+      }
+    },
+    "gemini-cli": {
+      "enabled": false,
+      "config": {
+        "command": "gemini",
+        "timeout": 300000
+      }
+    },
+    "aider": {
+      "enabled": false,
+      "config": {
+        "command": "aider",
+        "model": null,
+        "timeout": 300000
+      }
+    }
+  }
+}

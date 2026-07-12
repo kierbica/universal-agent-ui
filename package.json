@@ -1,0 +1,24 @@
+{
+  "name": "universal-agent-ui",
+  "version": "1.0.0",
+  "description": "Universal coding-agent Web UI — provider-agnostic frontend for any AI coding agent",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  },
+  "keywords": [
+    "coding-agent",
+    "ai",
+    "web-ui",
+    "claude",
+    "opencode",
+    "universal",
+    "provider-agnostic"
+  ],
+  "license": "MIT"
+}
