@@ -44,6 +44,16 @@ const settingsBackdrop = document.getElementById('settings-backdrop');
 const settingsClose = document.getElementById('settings-close');
 const settingsProviders = document.getElementById('settings-providers');
 
+// --- Mobile DOM refs ---
+const mobileHeader = document.getElementById('mobile-header');
+const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+const mobileProviderTrigger = document.getElementById('mobile-provider-trigger');
+const mobileProviderIcon = document.getElementById('mobile-provider-icon');
+const mobileProviderName = document.getElementById('mobile-provider-name');
+const mobileSettingsBtn = document.getElementById('mobile-settings-btn');
+const sidebarEl = document.getElementById('sidebar');
+const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+
 // --- Auto-resize textarea ---
 inputEl.addEventListener('input', () => {
   inputEl.style.height = 'auto';
@@ -84,6 +94,7 @@ newChatBtn.addEventListener('click', () => {
   showWelcome();
   inputEl.focus();
   loadSessions();
+  closeSidebar();
 });
 
 // --- Error dismiss ---
@@ -117,6 +128,50 @@ function openSettings() {
 function closeSettings() {
   settingsModal.classList.add('hidden');
 }
+
+// --- Mobile sidebar ---
+function openSidebar() {
+  sidebarEl.classList.add('open');
+  sidebarBackdrop.classList.add('visible');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+  sidebarEl.classList.remove('open');
+  sidebarBackdrop.classList.remove('visible');
+  document.body.style.overflow = '';
+}
+
+function isMobile() {
+  return window.innerWidth <= 720;
+}
+
+mobileMenuBtn.addEventListener('click', () => {
+  if (sidebarEl.classList.contains('open')) {
+    closeSidebar();
+  } else {
+    openSidebar();
+  }
+});
+
+sidebarBackdrop.addEventListener('click', closeSidebar);
+
+// Mobile provider trigger — opens the same dropdown
+mobileProviderTrigger.addEventListener('click', (e) => {
+  e.stopPropagation();
+  providerMenu.classList.toggle('hidden');
+});
+
+// Mobile settings button
+mobileSettingsBtn.addEventListener('click', openSettings);
+
+// Close sidebar on escape
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (sidebarEl.classList.contains('open')) closeSidebar();
+    if (!settingsModal.classList.contains('hidden')) closeSettings();
+  }
+});
 
 // --- Load providers ---
 async function loadProviders() {
@@ -155,6 +210,7 @@ function renderProviderMenu() {
       const provider = providers.find(p => p.id === el.dataset.id);
       if (provider) selectProvider(provider);
       providerMenu.classList.add('hidden');
+      if (isMobile()) closeSidebar();
     });
   });
 }
@@ -189,6 +245,10 @@ function selectProvider(provider) {
   providerMenu.querySelectorAll('.provider-option').forEach(el => {
     el.classList.toggle('active', el.dataset.id === provider.id);
   });
+
+  // Sync mobile header
+  if (mobileProviderIcon) mobileProviderIcon.textContent = provider.icon;
+  if (mobileProviderName) mobileProviderName.textContent = provider.name;
 
   // Check auth
   checkAuth();
@@ -463,6 +523,7 @@ function loadSession(sessionId) {
       }
       scrollToBottom();
       highlightSession(sessionId);
+      if (isMobile()) closeSidebar();
     })
     .catch(() => showError('Failed to load session'));
 }
